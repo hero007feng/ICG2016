@@ -4,12 +4,29 @@
 #include <imgui.h>
 #include "imgui_impl_glfw_gl3.h"
 #include <stdio.h>
+#include <dirent.h>
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define IM_ARRAYSIZE(_ARR)  ((int)(sizeof(_ARR)/sizeof(*_ARR)))
+
+struct Picture
+{
+    int width;
+    int height;
+    int channel;
+    int index;
+    unsigned char *data;
+};
+
+struct FileList
+{
+    int current;
+    int file_count;
+    char **files;
+};
 
 struct DrawData
 {
@@ -20,33 +37,86 @@ struct DrawData
     DrawData(const ImVec2& p, const ImVec2& u) { pos = ImVec2(p.x, p.y); uv = ImVec2(u.x, u.y); }
 };
 
-void CheckProgramCompile(GLuint Handle)
+FileList make_file_list(const char *folder)
 {
-    GLint Result = GL_FALSE;
-    int InfoLogLength = 0;
-    glGetProgramiv(Handle, GL_LINK_STATUS, &Result);
-    glGetProgramiv(Handle, GL_INFO_LOG_LENGTH, &InfoLogLength);
-    if (InfoLogLength > 0)
+    FileList file_list = {};
+    file_list.current = -1;
+    DIR *dir;
+    struct dirent *dir_entry;
+    dir = opendir(folder);
+    if (dir)
     {
-        int OutputLength;
-        char ErrorMessage[InfoLogLength+1];
-        glGetProgramInfoLog(Handle, InfoLogLength, &OutputLength, ErrorMessage);
-        ErrorMessage[InfoLogLength] = '\0';
+        while ((dir_entry = readdir(dir)) != NULL)
+        {
+            if (dir_entry->d_type == DT_REG)
+            {
+                file_list.files = (char **)realloc(file_list.files, (file_list.file_count + 1) * sizeof(char *));
+                file_list.files[file_list.file_count++] = strdup(dir_entry->d_name);
+            }
+        }
+        closedir(dir);
+    }
+
+    return file_list;
+}
+
+bool file_list_getter(void* data, int idx, const char** out_text)
+{
+    const char** items = (const char**)data;
+    if (out_text)
+        *out_text = items[idx];
+    return true;
+}
+
+void check_shader(void (*param_getter)(GLuint program, GLenum pname, GLint *params),
+                  GLuint handle, GLenum param,
+                  void (*log_getter)(GLuint program, GLsizei maxLength, GLsizei *length, GLchar *infoLog))
+{
+    GLint result = GL_FALSE;
+    int info_log_length = 0;
+    param_getter(handle, param, &result);
+    param_getter(handle, GL_INFO_LOG_LENGTH, &info_log_length);
+    if (info_log_length > 0)
+    {
+        int output_length;
+        char error_messages[info_log_length+1];
+        log_getter(handle, info_log_length, &output_length, error_messages);
+        error_messages[info_log_length] = '\0';
+        fprintf(stderr, "%s", error_messages);
+    }
+
+}
+
+void check_prog_compile(GLuint handle)
+{
+    GLint result = GL_FALSE;
+    int info_log_length = 0;
+    glGetProgramiv(handle, GL_LINK_STATUS, &result);
+    glGetProgramiv(handle, GL_INFO_LOG_LENGTH, &info_log_length);
+    if (info_log_length > 0)
+    {
+        int output_length;
+        char error_messages[info_log_length+1];
+        glGetProgramInfoLog(handle, info_log_length, &output_length, error_messages);
+        error_messages[info_log_length] = '\0';
+        fprintf(stderr, "%s", error_messages);
     }
 }
 
-void CheckShaderCompile(GLuint Handle)
+void check_shader_compile(GLuint handle)
 {
-    GLint Result = GL_FALSE;
-    int InfoLogLength = 0;
-    glGetShaderiv(Handle, GL_COMPILE_STATUS, &Result);
-    glGetShaderiv(Handle, GL_INFO_LOG_LENGTH, &InfoLogLength);
-    if (InfoLogLength > 0)
+    GLint result = GL_FALSE;
+    int info_log_length = 0;
+    glGetShaderiv(handle, GL_COMPILE_STATUS, &result);
+    glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &info_log_length);
+
+    if (info_log_length > 0)
     {
-        int OutputLength;
-        char ErrorMessage[InfoLogLength+1];
-        glGetShaderInfoLog(Handle, InfoLogLength, &OutputLength, ErrorMessage);
-        ErrorMessage[InfoLogLength] = '\0';
+        int output_length;
+        char error_messages[info_log_length+1];
+        glGetShaderInfoLog(handle, info_log_length, &output_length, error_messages);
+        error_messages[info_log_length] = '\0';
+        fprintf(stderr, "%s", error_messages);
     }
 }
 
@@ -55,7 +125,7 @@ static void error_callback(int error, const char* description)
     fprintf(stderr, "Error %d: %s\n", error, description);
 }
 
-int main(int, char**)
+int main(int argc, char* argv[])
 {
     // Setup window
     glfwSetErrorCallback(error_callback);
@@ -91,7 +161,6 @@ int main(int, char**)
         "uniform mat4 ProjMtx;\n"
         "in vec2 Position;\n"
         "in vec2 UV;\n"
-        "in vec4 Color;\n"
         "out vec2 Frag_UV;\n"
         "void main()\n"
         "{\n"
@@ -103,10 +172,10 @@ int main(int, char**)
         "#version 330\n"
         "uniform sampler2D Texture;\n"
         "in vec2 Frag_UV;\n"
-        "out vec3 Out_Color;\n"
+        "out vec4 Out_Color;\n"
         "void main()\n"
         "{\n"
-        "	Out_Color = texture( Texture, Frag_UV ).rgb;\n"
+        "	Out_Color = texture( Texture, Frag_UV );\n"
         "}\n";
 
     GLuint shader_handle = glCreateProgram();
@@ -114,11 +183,14 @@ int main(int, char**)
     GLuint frag_handle = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(vert_handle, 1, &vertex_shader, 0);
     glShaderSource(frag_handle, 1, &fragment_shader, 0);
-    glCompileShader(vert_handle); CheckShaderCompile(vert_handle);
-    glCompileShader(frag_handle); CheckShaderCompile(frag_handle);
+    glCompileShader(vert_handle); check_shader(glGetShaderiv, vert_handle, GL_COMPILE_STATUS, glGetShaderInfoLog);
+    glCompileShader(frag_handle); check_shader(glGetShaderiv, frag_handle, GL_COMPILE_STATUS, glGetShaderInfoLog);
     glAttachShader(shader_handle, vert_handle);
     glAttachShader(shader_handle, frag_handle);
-    glLinkProgram(shader_handle); CheckProgramCompile(shader_handle);
+    glLinkProgram(shader_handle); check_shader(glGetProgramiv, shader_handle, GL_LINK_STATUS, glGetProgramInfoLog);
+
+
+    check_prog_compile(shader_handle);
 
     GLuint attrib_location_tex = glGetUniformLocation(shader_handle, "Texture");
     GLuint attrib_location_projmtx = glGetUniformLocation(shader_handle, "ProjMtx");
@@ -151,19 +223,12 @@ int main(int, char**)
     bool show_another_window = false;
     ImVec4 clear_color = ImColor(114, 144, 154);
 
-    int width, height, channel;
-    unsigned char *data = stbi_load("../pic/128-21.png", &width, &height, &channel, STBI_rgb);
-    printf("%d, %d, %p, %d\n", width, height, data, channel);
+    const char *folder = argv[1];
+    FileList file_list = make_file_list(folder);
+    Picture pic = {};
+    pic.index = -1;
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-
-    DrawData draw_data[4] =
-        {
-            DrawData(ImVec2(0.0f, 0.0f), ImVec2(0.0f, 0.0f)),
-            DrawData(ImVec2((float)width, 0.0f), ImVec2(1.0f, 0.0f)),
-            DrawData(ImVec2(0.0f, (float)height), ImVec2(0.0f, 1.0f)),
-            DrawData(ImVec2((float)width, (float)height), ImVec2(1.0f, 1.0f)),
-        };
+    DrawData draw_data[4];
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -182,6 +247,30 @@ int main(int, char**)
             if (ImGui::Button("Another Window")) show_another_window ^= 1;
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::Text("Press A? %s", ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_A))? "yes" : "no");
+            ImGui::Text("%d", file_list.file_count);
+            ImGui::Combo("Files", &file_list.current, file_list_getter, (void *)file_list.files, file_list.file_count);
+        }
+
+        if (file_list.current >= 0 && file_list.current != pic.index)
+        {
+            if (pic.data)
+            {
+                stbi_image_free(pic.data);
+            }
+
+            char filename[512];
+            strncpy(filename, folder, sizeof(filename));
+            strncat(filename, file_list.files[file_list.current], sizeof(filename));
+            pic.index = file_list.current;
+            pic.data = stbi_load(filename, &pic.width, &pic.height, &pic.channel, STBI_rgb_alpha);
+            printf("%d, %d, %p, %d\n", pic.width, pic.height, pic.data, pic.channel);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pic.data);
+
+            draw_data[0] = DrawData(ImVec2(0.0f, 0.0f), ImVec2(0.0f, 0.0f));
+            draw_data[1] = DrawData(ImVec2((float)pic.width, 0.0f), ImVec2(1.0f, 0.0f));
+            draw_data[2] = DrawData(ImVec2(0.0f, (float)pic.height), ImVec2(0.0f, 1.0f));
+            draw_data[3] = DrawData(ImVec2((float)pic.width, (float)pic.height), ImVec2(1.0f, 1.0f));
         }
 
         // 2. Show another simple window, this time using an explicit Begin/End pair
