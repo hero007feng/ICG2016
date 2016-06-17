@@ -87,39 +87,6 @@ void check_shader(void (*param_getter)(GLuint program, GLenum pname, GLint *para
 
 }
 
-void check_prog_compile(GLuint handle)
-{
-    GLint result = GL_FALSE;
-    int info_log_length = 0;
-    glGetProgramiv(handle, GL_LINK_STATUS, &result);
-    glGetProgramiv(handle, GL_INFO_LOG_LENGTH, &info_log_length);
-    if (info_log_length > 0)
-    {
-        int output_length;
-        char error_messages[info_log_length+1];
-        glGetProgramInfoLog(handle, info_log_length, &output_length, error_messages);
-        error_messages[info_log_length] = '\0';
-        fprintf(stderr, "%s", error_messages);
-    }
-}
-
-void check_shader_compile(GLuint handle)
-{
-    GLint result = GL_FALSE;
-    int info_log_length = 0;
-    glGetShaderiv(handle, GL_COMPILE_STATUS, &result);
-    glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &info_log_length);
-
-    if (info_log_length > 0)
-    {
-        int output_length;
-        char error_messages[info_log_length+1];
-        glGetShaderInfoLog(handle, info_log_length, &output_length, error_messages);
-        error_messages[info_log_length] = '\0';
-        fprintf(stderr, "%s", error_messages);
-    }
-}
-
 static void error_callback(int error, const char* description)
 {
     fprintf(stderr, "Error %d: %s\n", error, description);
@@ -188,8 +155,6 @@ int main(int argc, char* argv[])
     glAttachShader(shader_handle, vert_handle);
     glAttachShader(shader_handle, frag_handle);
     glLinkProgram(shader_handle); check_shader(glGetProgramiv, shader_handle, GL_LINK_STATUS, glGetProgramInfoLog);
-
-    check_prog_compile(shader_handle);
 
     GLuint attrib_location_projmtx = glGetUniformLocation(shader_handle, "ProjMtx");
     GLuint attrib_location_position = glGetAttribLocation(shader_handle, "Position");
