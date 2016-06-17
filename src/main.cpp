@@ -189,10 +189,8 @@ int main(int argc, char* argv[])
     glAttachShader(shader_handle, frag_handle);
     glLinkProgram(shader_handle); check_shader(glGetProgramiv, shader_handle, GL_LINK_STATUS, glGetProgramInfoLog);
 
-
     check_prog_compile(shader_handle);
 
-    GLuint attrib_location_tex = glGetUniformLocation(shader_handle, "Texture");
     GLuint attrib_location_projmtx = glGetUniformLocation(shader_handle, "ProjMtx");
     GLuint attrib_location_position = glGetAttribLocation(shader_handle, "Position");
     GLuint attrib_location_uv = glGetAttribLocation(shader_handle, "UV");
@@ -203,14 +201,14 @@ int main(int argc, char* argv[])
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    GLuint vbo_handle, elements_handle;
+    GLuint vbo_handle;
     glGenBuffers(1, &vbo_handle);
-    glGenBuffers(1, &elements_handle);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_handle);
 
     GLuint vao_handle;
     glGenVertexArrays(1, &vao_handle);
     glBindVertexArray(vao_handle);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_handle);
+
     glEnableVertexAttribArray(attrib_location_position);
     glEnableVertexAttribArray(attrib_location_uv);
 
@@ -228,7 +226,7 @@ int main(int argc, char* argv[])
     Picture pic = {};
     pic.index = -1;
 
-    DrawData draw_data[4];
+    DrawData draw_data[4] = {};
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -304,7 +302,6 @@ int main(int argc, char* argv[])
                 {-1.0f,                  1.0f,                               0.0f, 1.0f },
             };
         glUseProgram(shader_handle);
-        glUniform1i(attrib_location_tex, 0);
         glUniformMatrix4fv(attrib_location_projmtx, 1, GL_FALSE, &ortho_projection[0][0]);
         glBindVertexArray(vao_handle);
 
