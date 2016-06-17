@@ -9,6 +9,8 @@
 #include <GLFW/glfw3.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "sim.h"
+#include "display.h"
 
 #define IM_ARRAYSIZE(_ARR)  ((int)(sizeof(_ARR)/sizeof(*_ARR)))
 
@@ -18,6 +20,7 @@ struct Picture
     int height;
     int channel;
     int index;
+    int byte_per_row;
     unsigned char *data;
 };
 
@@ -226,6 +229,7 @@ int main(int argc, char* argv[])
             strncat(filename, file_list.files[file_list.current], sizeof(filename));
             pic.index = file_list.current;
             pic.data = stbi_load(filename, &pic.width, &pic.height, &pic.channel, STBI_rgb_alpha);
+            pic.byte_per_row = pic.width*pic.channel;
             printf("%d, %d, %p, %d\n", pic.width, pic.height, pic.data, pic.channel);
 
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pic.data);
