@@ -10,7 +10,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "sim.h"
-#include "display.h"
 
 #define IM_ARRAYSIZE(_ARR)  ((int)(sizeof(_ARR)/sizeof(*_ARR)))
 
@@ -196,18 +195,32 @@ int main(int argc, char* argv[])
 
     DrawData draw_data[4] = {};
 
+    float *vx[2] = {};
+    float *vy[2] = {};
+    float *dens[2] = {};
+
+    float visc = 0.0f;
+    float diff = 0.0f;
+
     // Main loop
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
         ImGui_ImplGlfwGL3_NewFrame();
 
+        if (ImGui::IsMouseDown(0) && pic.data)
+        {
+            int row = (int)ImGui::GetIO().MousePos.y;
+            int col = (int)ImGui::GetIO().MousePos.x;
+            dens[1][row*pic.width + col] = 100.0f;
+        }
+
         // 1. Show a simple window
         // Tip: if we don't call ImGui::Begin()/ImGui::End() the widgets appears in a window automatically called "Debug"
         {
-            static float f = 0.0f;
             ImGui::Text("Hello, world!");
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
+            ImGui::SliderFloat("visc", &visc, 0.0f, 100.0f);
+            ImGui::SliderFloat("diff", &diff, 0.0f, 100.0f);
             ImGui::ColorEdit3("clear color", (float*)&clear_color);
             if (ImGui::Button("Test Window")) show_test_window ^= 1;
             if (ImGui::Button("Another Window")) show_another_window ^= 1;
@@ -229,6 +242,7 @@ int main(int argc, char* argv[])
             strncat(filename, file_list.files[file_list.current], sizeof(filename));
             pic.index = file_list.current;
             pic.data = stbi_load(filename, &pic.width, &pic.height, &pic.channel, STBI_rgb_alpha);
+            pic.channel = 4;
             pic.byte_per_row = pic.width*pic.channel;
             printf("%d, %d, %p, %d\n", pic.width, pic.height, pic.data, pic.channel);
 
@@ -238,6 +252,40 @@ int main(int argc, char* argv[])
             draw_data[1] = DrawData(ImVec2((float)pic.width, 0.0f), ImVec2(1.0f, 0.0f));
             draw_data[2] = DrawData(ImVec2(0.0f, (float)pic.height), ImVec2(0.0f, 1.0f));
             draw_data[3] = DrawData(ImVec2((float)pic.width, (float)pic.height), ImVec2(1.0f, 1.0f));
+
+            int size = (pic.width + 2) * (pic.height + 2);
+
+            vx[0] = (float *)realloc(vx[0], sizeof(float)*size); memset(vx[0], 0, sizeof(float)*size);
+            vx[1] = (float *)realloc(vx[1], sizeof(float)*size); memset(vx[1], 0, sizeof(float)*size);
+            vy[0] = (float *)realloc(vy[0], sizeof(float)*size); memset(vy[0], 0, sizeof(float)*size);
+            vy[1] = (float *)realloc(vy[1], sizeof(float)*size); memset(vy[1], 0, sizeof(float)*size);
+
+            for (int index = 0; index < 2; ++index)
+            {
+                    dens[index] = (float *)realloc(dens[index], sizeof(float)*size);
+                    memset(dens[index], 0, sizeof(float)*size);
+            }
+        }
+
+        if (pic.data)
+        {
+            vel_step(pic.width, pic.height, vx[1], vy[1], vx[0], vy[0], visc, ImGui::GetIO().DeltaTime);
+            dens_step(pic.width, pic.height, dens[1], dens[0], vx[1], vy[1], diff, ImGui::GetIO().DeltaTime);
+
+            for (int row = 0; row < pic.height; ++row)
+            {
+                for (int col = 0; col < pic.width; ++col)
+                {
+                    for (int chl = 0; chl < pic.channel; ++chl)
+                    {
+                        unsigned char *prev_value = &pic.data[row*pic.byte_per_row + col*pic.channel + chl];
+                        unsigned int next_value = (*prev_value)*(dens[1][(row + 1)*pic.width + (col + 1)]);
+                        *prev_value = next_value;
+                    }
+                }
+            }
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pic.data);
         }
 
         // 2. Show another simple window, this time using an explicit Begin/End pair
