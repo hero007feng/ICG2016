@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
+#include <assert.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "sim.h"
@@ -140,11 +141,18 @@ int main(int argc, char* argv[])
     const GLchar* fragment_shader =
         "#version 330\n"
         "uniform sampler2D Texture;\n"
+        "uniform sampler2D test;\n"
         "in vec2 Frag_UV;\n"
-        "out vec4 Out_Color;\n"
         "void main()\n"
         "{\n"
-        "	Out_Color = texture( Texture, Frag_UV );\n"
+        "  if (Frag_UV.x > 0.5f)\n"
+        "  {\n"
+        "	   gl_FragColor = texture( test, Frag_UV );\n"
+        "  }\n"
+        "  else\n"
+        "  {\n"
+        "	   gl_FragColor = texture( Texture, Frag_UV );\n"
+        "  }\n"
         "}\n";
 
     GLuint shader_handle = glCreateProgram();
@@ -158,13 +166,25 @@ int main(int argc, char* argv[])
     glAttachShader(shader_handle, frag_handle);
     glLinkProgram(shader_handle); check_shader(glGetProgramiv, shader_handle, GL_LINK_STATUS, glGetProgramInfoLog);
 
-    GLuint attrib_location_projmtx = glGetUniformLocation(shader_handle, "ProjMtx");
-    GLuint attrib_location_position = glGetAttribLocation(shader_handle, "Position");
-    GLuint attrib_location_uv = glGetAttribLocation(shader_handle, "UV");
+    GLint attrib_location_projmtx = glGetUniformLocation(shader_handle, "ProjMtx");
+    GLint attrib_location_texture = glGetUniformLocation(shader_handle, "Texture");
+    GLint attrib_location_test = glGetUniformLocation(shader_handle, "test");
+    GLint attrib_location_position = glGetAttribLocation(shader_handle, "Position");
+    GLint attrib_location_uv = glGetAttribLocation(shader_handle, "UV");
+
+    assert(attrib_location_projmtx != -1);
+    assert(attrib_location_texture != -1);
+    assert(attrib_location_test != -1);
 
     GLuint texture_handle;
     glGenTextures(1, &texture_handle);
     glBindTexture(GL_TEXTURE_2D, texture_handle);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    GLuint test;
+    glGenTextures(1, &test);
+    glBindTexture(GL_TEXTURE_2D, test);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -195,10 +215,6 @@ int main(int argc, char* argv[])
 
     DrawData draw_data[4] = {};
 
-    float *vx[2] = {};
-    float *vy[2] = {};
-    float *dens[2] = {};
-
     float visc = 0.0f;
     float diff = 0.0f;
 
@@ -208,12 +224,12 @@ int main(int argc, char* argv[])
         glfwPollEvents();
         ImGui_ImplGlfwGL3_NewFrame();
 
-        if (ImGui::IsMouseDown(0) && pic.data)
-        {
-            int row = (int)ImGui::GetIO().MousePos.y;
-            int col = (int)ImGui::GetIO().MousePos.x;
-            dens[1][row*pic.width + col] = 100.0f;
-        }
+        // if (ImGui::IsMouseDown(0) && pic.data)
+        // {
+        //     int row = (int)ImGui::GetIO().MousePos.y;
+        //     int col = (int)ImGui::GetIO().MousePos.x;
+        //     dens[1][row*pic.width + col] = 100.0f;
+        // }
 
         // 1. Show a simple window
         // Tip: if we don't call ImGui::Begin()/ImGui::End() the widgets appears in a window automatically called "Debug"
@@ -246,7 +262,16 @@ int main(int argc, char* argv[])
             pic.byte_per_row = pic.width*pic.channel;
             printf("%d, %d, %p, %d\n", pic.width, pic.height, pic.data, pic.channel);
 
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture_handle);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pic.data);
+
+            unsigned char *data = (unsigned char *)malloc(sizeof(unsigned char)*(pic.width*pic.height*pic.channel));
+            memset(data, 0xff, sizeof(unsigned char)*(pic.width*pic.height*pic.channel));
+
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, test);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 
             draw_data[0] = DrawData(ImVec2(0.0f, 0.0f), ImVec2(0.0f, 0.0f));
             draw_data[1] = DrawData(ImVec2((float)pic.width, 0.0f), ImVec2(1.0f, 0.0f));
@@ -254,39 +279,8 @@ int main(int argc, char* argv[])
             draw_data[3] = DrawData(ImVec2((float)pic.width, (float)pic.height), ImVec2(1.0f, 1.0f));
 
             int size = (pic.width + 2) * (pic.height + 2);
-
-            vx[0] = (float *)realloc(vx[0], sizeof(float)*size); memset(vx[0], 0, sizeof(float)*size);
-            vx[1] = (float *)realloc(vx[1], sizeof(float)*size); memset(vx[1], 0, sizeof(float)*size);
-            vy[0] = (float *)realloc(vy[0], sizeof(float)*size); memset(vy[0], 0, sizeof(float)*size);
-            vy[1] = (float *)realloc(vy[1], sizeof(float)*size); memset(vy[1], 0, sizeof(float)*size);
-
-            for (int index = 0; index < 2; ++index)
-            {
-                    dens[index] = (float *)realloc(dens[index], sizeof(float)*size);
-                    memset(dens[index], 0, sizeof(float)*size);
-            }
         }
 
-        if (pic.data)
-        {
-            vel_step(pic.width, pic.height, vx[1], vy[1], vx[0], vy[0], visc, ImGui::GetIO().DeltaTime);
-            dens_step(pic.width, pic.height, dens[1], dens[0], vx[1], vy[1], diff, ImGui::GetIO().DeltaTime);
-
-            for (int row = 0; row < pic.height; ++row)
-            {
-                for (int col = 0; col < pic.width; ++col)
-                {
-                    for (int chl = 0; chl < pic.channel; ++chl)
-                    {
-                        unsigned char *prev_value = &pic.data[row*pic.byte_per_row + col*pic.channel + chl];
-                        unsigned int next_value = (*prev_value)*(dens[1][(row + 1)*pic.width + (col + 1)]);
-                        *prev_value = next_value;
-                    }
-                }
-            }
-
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pic.data);
-        }
 
         // 2. Show another simple window, this time using an explicit Begin/End pair
         if (show_another_window)
@@ -319,6 +313,16 @@ int main(int argc, char* argv[])
                 {-1.0f,                  1.0f,                               0.0f, 1.0f },
             };
         glUseProgram(shader_handle);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture_handle);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, test);
+
+        glUniform1i(attrib_location_texture, 0);
+        glUniform1i(attrib_location_test, 1);
+
         glUniformMatrix4fv(attrib_location_projmtx, 1, GL_FALSE, &ortho_projection[0][0]);
         glBindVertexArray(vao_handle);
 
