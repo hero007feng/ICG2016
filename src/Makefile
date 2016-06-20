@@ -10,8 +10,8 @@
 
 #CXX = g++
 
-EXE = opengl3_example
-OBJS = main.o imgui_impl_glfw_gl3.o
+EXE = fluid_simulator
+OBJS = main.o imgui_impl_glfw_gl3.o sim.o
 OBJS += ../libs/imgui/imgui.o ../libs/imgui/imgui_demo.o ../libs/imgui/imgui_draw.o
 OBJS += ../libs/gl3w/GL/gl3w.o
 

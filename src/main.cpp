@@ -7,8 +7,10 @@
 #include <dirent.h>
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
+#include <assert.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "sim.h"
 
 #define IM_ARRAYSIZE(_ARR)  ((int)(sizeof(_ARR)/sizeof(*_ARR)))
 
@@ -18,6 +20,7 @@ struct Picture
     int height;
     int channel;
     int index;
+    int byte_per_row;
     unsigned char *data;
 };
 
@@ -87,39 +90,6 @@ void check_shader(void (*param_getter)(GLuint program, GLenum pname, GLint *para
 
 }
 
-void check_prog_compile(GLuint handle)
-{
-    GLint result = GL_FALSE;
-    int info_log_length = 0;
-    glGetProgramiv(handle, GL_LINK_STATUS, &result);
-    glGetProgramiv(handle, GL_INFO_LOG_LENGTH, &info_log_length);
-    if (info_log_length > 0)
-    {
-        int output_length;
-        char error_messages[info_log_length+1];
-        glGetProgramInfoLog(handle, info_log_length, &output_length, error_messages);
-        error_messages[info_log_length] = '\0';
-        fprintf(stderr, "%s", error_messages);
-    }
-}
-
-void check_shader_compile(GLuint handle)
-{
-    GLint result = GL_FALSE;
-    int info_log_length = 0;
-    glGetShaderiv(handle, GL_COMPILE_STATUS, &result);
-    glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &info_log_length);
-
-    if (info_log_length > 0)
-    {
-        int output_length;
-        char error_messages[info_log_length+1];
-        glGetShaderInfoLog(handle, info_log_length, &output_length, error_messages);
-        error_messages[info_log_length] = '\0';
-        fprintf(stderr, "%s", error_messages);
-    }
-}
-
 static void error_callback(int error, const char* description)
 {
     fprintf(stderr, "Error %d: %s\n", error, description);
@@ -171,11 +141,18 @@ int main(int argc, char* argv[])
     const GLchar* fragment_shader =
         "#version 330\n"
         "uniform sampler2D Texture;\n"
+        "uniform sampler2D test;\n"
         "in vec2 Frag_UV;\n"
-        "out vec4 Out_Color;\n"
         "void main()\n"
         "{\n"
-        "	Out_Color = texture( Texture, Frag_UV );\n"
+        "  if (Frag_UV.x > 0.5f)\n"
+        "  {\n"
+        "	   gl_FragColor = texture( test, Frag_UV );\n"
+        "  }\n"
+        "  else\n"
+        "  {\n"
+        "	   gl_FragColor = texture( Texture, Frag_UV );\n"
+        "  }\n"
         "}\n";
 
     GLuint shader_handle = glCreateProgram();
@@ -189,13 +166,15 @@ int main(int argc, char* argv[])
     glAttachShader(shader_handle, frag_handle);
     glLinkProgram(shader_handle); check_shader(glGetProgramiv, shader_handle, GL_LINK_STATUS, glGetProgramInfoLog);
 
+    GLint attrib_location_projmtx = glGetUniformLocation(shader_handle, "ProjMtx");
+    GLint attrib_location_texture = glGetUniformLocation(shader_handle, "Texture");
+    GLint attrib_location_test = glGetUniformLocation(shader_handle, "test");
+    GLint attrib_location_position = glGetAttribLocation(shader_handle, "Position");
+    GLint attrib_location_uv = glGetAttribLocation(shader_handle, "UV");
 
-    check_prog_compile(shader_handle);
-
-    GLuint attrib_location_tex = glGetUniformLocation(shader_handle, "Texture");
-    GLuint attrib_location_projmtx = glGetUniformLocation(shader_handle, "ProjMtx");
-    GLuint attrib_location_position = glGetAttribLocation(shader_handle, "Position");
-    GLuint attrib_location_uv = glGetAttribLocation(shader_handle, "UV");
+    assert(attrib_location_projmtx != -1);
+    assert(attrib_location_texture != -1);
+    assert(attrib_location_test != -1);
 
     GLuint texture_handle;
     glGenTextures(1, &texture_handle);
@@ -203,14 +182,20 @@ int main(int argc, char* argv[])
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    GLuint vbo_handle, elements_handle;
+    GLuint test;
+    glGenTextures(1, &test);
+    glBindTexture(GL_TEXTURE_2D, test);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    GLuint vbo_handle;
     glGenBuffers(1, &vbo_handle);
-    glGenBuffers(1, &elements_handle);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_handle);
 
     GLuint vao_handle;
     glGenVertexArrays(1, &vao_handle);
     glBindVertexArray(vao_handle);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_handle);
+
     glEnableVertexAttribArray(attrib_location_position);
     glEnableVertexAttribArray(attrib_location_uv);
 
@@ -228,7 +213,10 @@ int main(int argc, char* argv[])
     Picture pic = {};
     pic.index = -1;
 
-    DrawData draw_data[4];
+    DrawData draw_data[4] = {};
+
+    float visc = 0.0f;
+    float diff = 0.0f;
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -236,12 +224,19 @@ int main(int argc, char* argv[])
         glfwPollEvents();
         ImGui_ImplGlfwGL3_NewFrame();
 
+        // if (ImGui::IsMouseDown(0) && pic.data)
+        // {
+        //     int row = (int)ImGui::GetIO().MousePos.y;
+        //     int col = (int)ImGui::GetIO().MousePos.x;
+        //     dens[1][row*pic.width + col] = 100.0f;
+        // }
+
         // 1. Show a simple window
         // Tip: if we don't call ImGui::Begin()/ImGui::End() the widgets appears in a window automatically called "Debug"
         {
-            static float f = 0.0f;
             ImGui::Text("Hello, world!");
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
+            ImGui::SliderFloat("visc", &visc, 0.0f, 100.0f);
+            ImGui::SliderFloat("diff", &diff, 0.0f, 100.0f);
             ImGui::ColorEdit3("clear color", (float*)&clear_color);
             if (ImGui::Button("Test Window")) show_test_window ^= 1;
             if (ImGui::Button("Another Window")) show_another_window ^= 1;
@@ -263,15 +258,29 @@ int main(int argc, char* argv[])
             strncat(filename, file_list.files[file_list.current], sizeof(filename));
             pic.index = file_list.current;
             pic.data = stbi_load(filename, &pic.width, &pic.height, &pic.channel, STBI_rgb_alpha);
+            pic.channel = 4;
+            pic.byte_per_row = pic.width*pic.channel;
             printf("%d, %d, %p, %d\n", pic.width, pic.height, pic.data, pic.channel);
 
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture_handle);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pic.data);
+
+            unsigned char *data = (unsigned char *)malloc(sizeof(unsigned char)*(pic.width*pic.height*pic.channel));
+            memset(data, 0xff, sizeof(unsigned char)*(pic.width*pic.height*pic.channel));
+
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, test);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pic.width, pic.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 
             draw_data[0] = DrawData(ImVec2(0.0f, 0.0f), ImVec2(0.0f, 0.0f));
             draw_data[1] = DrawData(ImVec2((float)pic.width, 0.0f), ImVec2(1.0f, 0.0f));
             draw_data[2] = DrawData(ImVec2(0.0f, (float)pic.height), ImVec2(0.0f, 1.0f));
             draw_data[3] = DrawData(ImVec2((float)pic.width, (float)pic.height), ImVec2(1.0f, 1.0f));
+
+            int size = (pic.width + 2) * (pic.height + 2);
         }
+
 
         // 2. Show another simple window, this time using an explicit Begin/End pair
         if (show_another_window)
@@ -304,7 +313,16 @@ int main(int argc, char* argv[])
                 {-1.0f,                  1.0f,                               0.0f, 1.0f },
             };
         glUseProgram(shader_handle);
-        glUniform1i(attrib_location_tex, 0);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture_handle);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, test);
+
+        glUniform1i(attrib_location_texture, 0);
+        glUniform1i(attrib_location_test, 1);
+
         glUniformMatrix4fv(attrib_location_projmtx, 1, GL_FALSE, &ortho_projection[0][0]);
         glBindVertexArray(vao_handle);
 

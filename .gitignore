@@ -1,0 +1,6 @@
+*.o
+*.jpg
+*.png
+*.ini
+fluid_simulator
+fluid_simulator.exe
