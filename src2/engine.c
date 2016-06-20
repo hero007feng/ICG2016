@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <stdbool.h>
 
 #define IX(i,j) ((i)+(N+2)*(j))
@@ -30,11 +31,33 @@ void set_bnd ( int N, int b, float * x )
 void lin_solve ( int N, int b, float * x, float * x0, bool * ob_map, float a, float c )
 {
 	int i, j, k;
+	float *ob_count_map;
+	int size = (N+2)*(N+2);
+
+	if (b == 0) {
+		ob_count_map = (float *)malloc(size*sizeof(float));
+		FOR_EACH_CELL
+			ob_count_map[IX(i,j)] = ob_map[IX(i+1,j)] + ob_map[IX(i-1,j)] + ob_map[IX(i,j+1)] + ob_map[IX(i,j-1)];
+		END_FOR
+		set_bnd(N, 0, ob_count_map);
+	}
 
 	for ( k=0 ; k<20 ; k++ ) {
 		FOR_EACH_CELL
 			if (ob_map[IX(i,j)]) {continue;}
-			x[IX(i,j)] = (x0[IX(i,j)] + a*(x[IX(i-1,j)]+x[IX(i+1,j)]+x[IX(i,j-1)]+x[IX(i,j+1)]))/c;
+
+			switch (b) {
+				case 0:
+					x[IX(i,j)] = (x0[IX(i,j)] + a*(x[IX(i-1,j)]*(!ob_map[IX(i-1,j)])
+												  +x[IX(i+1,j)]*(!ob_map[IX(i+1,j)])
+												  +x[IX(i,j-1)]*(!ob_map[IX(i,j-1)])
+												  +x[IX(i,j+1)]*(!ob_map[IX(i,j+1)])
+												  +x0[IX(i,j)]*ob_count_map[IX(i,j)]))/c;
+					break;
+
+				default:
+				x[IX(i,j)] = (x0[IX(i,j)] + a*(x[IX(i-1,j)]+x[IX(i+1,j)]+x[IX(i,j-1)]+x[IX(i,j+1)]))/c;
+			}
 		END_FOR
 		set_bnd ( N, b, x );
 	}

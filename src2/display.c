@@ -133,7 +133,7 @@ static void draw_velocity ( void )
 			for ( j=1 ; j<=N ; j++ ) {
 				y = (j-0.5f)*h;
 
-				if (!obstacle_map[IX(i,j)]) {
+				if (1 || !obstacle_map[IX(i,j)]) {
 					glVertex2f ( x, y );
 					glVertex2f ( x+u[IX(i,j)], y+v[IX(i,j)] );
 				} else {
@@ -159,7 +159,7 @@ static void draw_density ( void )
 			for ( j=0 ; j<=N ; j++ ) {
 				y = (j-0.5f)*h;
 
-				if (!obstacle_map[IX(i,j)]) {
+				if (1 || !obstacle_map[IX(i,j)]) {
 					d00 = dens[IX(i,j)];
 					d01 = dens[IX(i,j+1)];
 					d10 = dens[IX(i+1,j)];
@@ -356,7 +356,7 @@ int main ( int argc, char ** argv )
 	if ( argc == 1 ) {
 		N = 64;
 		dt = 0.1f;
-		diff = 0.0001f;
+		diff = 0.00003f;
 		visc = 0.0f;
 		force = 5.0f;
 		source = 100.0f;
