@@ -249,8 +249,8 @@ static void key_func ( unsigned char key, int x, int y )
 			dvel = !dvel;
 			break;
 
-		case 'g':
-		case 'G':
+		case 'f':
+		case 'F':
 			draw_mode = !draw_mode;
 			break;
 	}
@@ -375,7 +375,7 @@ int main ( int argc, char ** argv )
 	printf ( "\t Add densities with the right mouse button\n" );
 	printf ( "\t Add velocities with the left mouse button and dragging the mouse\n" );
 	printf ( "\t Toggle density/velocity display with the 'v' key\n" );
-	printf ( "\t Shut on/off obstacle drawing mode with the 'g' key\n" );
+	printf ( "\t Shut on/off obstacle drawing mode with the 'f' key\n" );
 	printf ( "\t Clear the simulation by pressing the 'c' key\n" );
 	printf ( "\t Quit by pressing the 'q' key\n" );
 
